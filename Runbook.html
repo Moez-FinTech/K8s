@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>K8s Runbook — Déployer une application conteneurisée</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.0.0/dist/tabler-icons.min.css">
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #e8e8e6;
+    --text: #1a1a18; --text2: #5f5e5a; --text3: #888780;
+    --border: rgba(0,0,0,0.12);
+    --green-bg: #eaf3de; --green-border: #639922; --green-text: #3b6d11;
+    --amber-bg: #faeeda; --amber-border: #ba7517; --amber-text: #854f0b;
+    --blue-bg: #e6f1fb; --blue-border: #185fa5; --blue-text: #0c447c;
+    --teal-bg: #e1f5ee; --teal-border: #0f6e56; --teal-text: #085041;
+    --radius: 10px; --radius-sm: 6px;
+    --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1c1c1a; --bg2: #252523; --bg3: #2e2e2b;
+      --text: #e8e8e4; --text2: #a8a8a0; --text3: #686860;
+      --border: rgba(255,255,255,0.12);
+      --green-bg: #173404; --green-border: #3b6d11; --green-text: #c0dd97;
+      --amber-bg: #412402; --amber-border: #854f0b; --amber-text: #fac775;
+      --blue-bg: #042c53; --blue-border: #185fa5; --blue-text: #b5d4f4;
+      --teal-bg: #04342c; --teal-border: #0f6e56; --teal-text: #9fe1cb;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--font); background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.6; }
+  .container { max-width: 860px; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
+
+  /* Header */
+  .site-header { border-bottom: 0.5px solid var(--border); padding-bottom: 1.5rem; margin-bottom: 2rem; }
+  .site-header h1 { font-size: 22px; font-weight: 600; color: var(--text); }
+  .site-header p { font-size: 14px; color: var(--text2); margin-top: 4px; }
+  .meta-tags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .tag { font-size: 11px; padding: 3px 10px; border-radius: 20px; border: 0.5px solid var(--border); color: var(--text3); }
+
+  /* Scope block */
+  .scope { border: 0.5px solid var(--border); border-radius: var(--radius); padding: 1.25rem 1.5rem; margin-bottom: 2rem; }
+  .scope-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 12px; }
+  .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  @media (max-width: 600px) { .scope-grid { grid-template-columns: 1fr; } }
+  .scope-col { border-radius: var(--radius-sm); padding: 0.75rem 1rem; }
+  .scope-col.in { background: var(--green-bg); border: 0.5px solid var(--green-border); }
+  .scope-col.out { background: var(--bg2); border: 0.5px solid var(--border); }
+  .scope-col-label { font-size: 11px; font-weight: 600; margin-bottom: 6px; }
+  .scope-col.in .scope-col-label { color: var(--green-text); }
+  .scope-col.out .scope-col-label { color: var(--text3); }
+  .scope-col ul { list-style: none; font-size: 12px; color: var(--text2); line-height: 1.9; }
+  .scope-note { font-size: 12px; color: var(--text2); border-top: 0.5px solid var(--border); padding-top: 10px; line-height: 1.6; }
+  .vsphere-note { background: var(--blue-bg); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-top: 10px; font-size: 12px; color: var(--blue-text); line-height: 1.6; }
+
+  /* Nav */
+  .step-nav { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+  .step-nav button { font-size: 12px; padding: 5px 13px; border-radius: 20px; border: 0.5px solid var(--border); background: transparent; color: var(--text2); cursor: pointer; font-family: var(--font); transition: all 0.15s; }
+  .step-nav button:hover { background: var(--bg2); color: var(--text); }
+  .step-nav button.active { background: var(--text); color: var(--bg); border-color: var(--text); }
+
+  /* Progress */
+  .progress { height: 2px; background: var(--bg3); border-radius: 2px; margin-bottom: 2rem; }
+  .progress-bar { height: 100%; background: var(--text); border-radius: 2px; transition: width 0.3s; }
+
+  /* Steps */
+  .step { display: none; }
+  .step.visible { display: block; }
+  .step-meta { margin-bottom: 1.25rem; }
+  .step-num { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.07em; margin-bottom: 4px; }
+  .step-title { font-size: 18px; font-weight: 600; color: var(--text); }
+  .step-goal { font-size: 13px; color: var(--text2); margin-top: 6px; line-height: 1.5; }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 1rem; flex-wrap: wrap; }
+  .tab { font-size: 12px; padding: 4px 12px; border-radius: var(--radius-sm); border: 0.5px solid var(--border); background: transparent; cursor: pointer; font-family: var(--font); color: var(--text2); }
+  .tab.on { background: var(--bg2); color: var(--text); }
+  .tab-pane { display: none; }
+  .tab-pane.on { display: block; }
+
+  /* Cards */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 1.25rem; }
+  .card { background: var(--bg); border: 0.5px solid var(--border); border-radius: var(--radius); padding: 0.9rem 1rem; }
+  .card-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .card-val { font-size: 14px; font-weight: 600; color: var(--text); }
+  .card-sub { font-size: 11px; color: var(--text2); margin-top: 2px; }
+
+  /* Sections */
+  .section { margin-bottom: 1.5rem; }
+  .section-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; padding-left: 10px; border-left: 2px solid var(--text); }
+  .code-label { font-size: 11px; color: var(--text3); margin-bottom: 4px; font-family: var(--font); }
+  .code { background: var(--bg2); border: 0.5px solid var(--border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; font-family: var(--mono); font-size: 12px; line-height: 1.7; color: var(--text); overflow-x: auto; white-space: pre; margin-bottom: 8px; }
+  code { font-family: var(--mono); font-size: 12px; background: var(--bg2); padding: 1px 5px; border-radius: 4px; color: var(--text); }
+
+  /* Alert boxes */
+  .warn { background: var(--amber-bg); border: 0.5px solid var(--amber-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 10px; font-size: 13px; color: var(--amber-text); line-height: 1.6; }
+  .info { background: var(--blue-bg); border: 0.5px solid var(--blue-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 10px; font-size: 13px; color: var(--blue-text); line-height: 1.6; }
+  .ok { background: var(--green-bg); border: 0.5px solid var(--green-border); border-radius: var(--radius-sm); padding: 0.75rem 1rem; margin-bottom: 10px; font-size: 13px; color: var(--green-text); line-height: 1.6; }
+
+  /* Checklist */
+  .checklist { list-style: none; }
+  .checklist li { display: flex; gap: 10px; align-items: flex-start; padding: 7px 0; border-bottom: 0.5px solid var(--border); font-size: 13px; color: var(--text2); line-height: 1.5; }
+  .checklist li:last-child { border-bottom: none; }
+  .checklist li i { font-size: 16px; margin-top: 1px; flex-shrink: 0; color: var(--text3); }
+
+  /* Flow */
+  .flow { margin-bottom: 1.25rem; }
+  .flow-item { display: grid; grid-template-columns: 28px 1fr; gap: 0 10px; }
+  .flow-left { display: flex; flex-direction: column; align-items: center; }
+  .flow-circle { width: 26px; height: 26px; border-radius: 50%; background: var(--text); color: var(--bg); font-size: 11px; font-weight: 600; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .flow-line { width: 1px; background: var(--border); flex: 1; margin: 3px 0; min-height: 16px; }
+  .flow-body { padding: 2px 0 1.25rem; }
+  .flow-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+  .flow-desc { font-size: 12px; color: var(--text2); line-height: 1.5; }
+
+  /* Footer nav */
+  .nav-footer { display: flex; justify-content: space-between; margin-top: 2.5rem; padding-top: 1.25rem; border-top: 0.5px solid var(--border); }
+  .nav-footer button { font-size: 13px; padding: 7px 18px; border-radius: var(--radius-sm); border: 0.5px solid var(--border); background: transparent; cursor: pointer; font-family: var(--font); color: var(--text); }
+  .nav-footer button:hover { background: var(--bg2); }
+  .nav-footer button:disabled { opacity: 0.3; cursor: default; }
+
+  /* Concepts table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 1rem; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text3); padding: 6px 10px; border-bottom: 0.5px solid var(--border); font-weight: 500; }
+  td { padding: 8px 10px; border-bottom: 0.5px solid var(--border); color: var(--text2); vertical-align: top; }
+  td:first-child { color: var(--text); font-family: var(--mono); font-size: 12px; white-space: nowrap; }
+  tr:last-child td { border-bottom: none; }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <!-- Header -->
+  <div class="site-header">
+    <h1>Déployer une application conteneurisée sur Kubernetes</h1>
+    <p>De zéro · bare metal, VMware ou machine locale · MTC Computing Runbook</p>
+    <div class="meta-tags">
+      <span class="tag">Kubernetes 1.28</span>
+      <span class="tag">Minikube</span>
+      <span class="tag">kubeadm</span>
+      <span class="tag">MariaDB</span>
+      <span class="tag">Ingress NGINX</span>
+      <span class="tag">Infra — pas architecture</span>
+    </div>
+  </div>
+
+  <!-- Scope -->
+  <div class="scope">
+    <div class="scope-title">Périmètre de ce runbook</div>
+    <div class="scope-grid">
+      <div class="scope-col in">
+        <div class="scope-col-label"><i class="ti ti-check"></i> Ce document couvre</div>
+        <ul>
+          <li>Installer Kubernetes (Minikube / kubeadm)</li>
+          <li>Configurer réseau et CoreDNS</li>
+          <li>Stockage persistant (PV / PVC)</li>
+          <li>Déployer une application web + MariaDB</li>
+          <li>Exposer via Ingress</li>
+          <li>Snapshot et shutdown propre</li>
+        </ul>
+      </div>
+      <div class="scope-col out">
+        <div class="scope-col-label"><i class="ti ti-minus"></i> Hors périmètre</div>
+        <ul>
+          <li>Control plane (etcd, API server, scheduler)</li>
+          <li>Sécurisation (RBAC, TLS, Network Policies)</li>
+          <li>Services managés (EKS, AKS, GKE)</li>
+          <li>Observabilité (Grafana, Prometheus)</li>
+          <li>GitOps et CI/CD (ArgoCD, Helm)</li>
+        </ul>
+      </div>
+    </div>
+    <div class="scope-note">Ce runbook traite la <strong>couche infra</strong> uniquement : installer, déployer, persister, sauvegarder. L'architecture du control plane, la sécurisation et les services managés feront l'objet d'un second volet.</div>
+    <div class="vsphere-note"><i class="ti ti-info-circle"></i> <strong>Repère vSphere :</strong> etcd ≈ base de configuration vCenter · API server ≈ vCenter server · nodes ≈ hôtes ESXi · kubeadm ≈ déploiement sans vCenter. Si vous avez administré vSphere, la logique est identique — seule la couche d'abstraction change.</div>
+  </div>
+
+  <!-- Navigation -->
+  <div class="step-nav" id="nav">
+    <button class="active" onclick="goto(0)">1 · Infrastructure</button>
+    <button onclick="goto(1)">2 · Installation K8s</button>
+    <button onclick="goto(2)">3 · Réseau &amp; DNS</button>
+    <button onclick="goto(3)">4 · Stockage + BDD</button>
+    <button onclick="goto(4)">5 · App web + Ingress</button>
+    <button onclick="goto(5)">6 · Snapshot + Shutdown</button>
+    <button onclick="goto(6)">Référence</button>
+  </div>
+  <div class="progress"><div class="progress-bar" id="prog" style="width:14.2%"></div></div>
+
+  <!-- STEP 1 -->
+  <div class="step visible" id="s0">
+    <div class="step-meta">
+      <div class="step-num">Étape 1 / 6</div>
+      <div class="step-title">Choisir et préparer l'infrastructure</div>
+      <div class="step-goal">Disposer d'une ou plusieurs machines sur lesquelles Kubernetes sera installé. Choisissez un cas, respectez les minimums.</div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" onclick="tab(this,'t0a')">Cas A · Local</button>
+      <button class="tab" onclick="tab(this,'t0b')">Cas B · Bare metal</button>
+      <button class="tab" onclick="tab(this,'t0c')">Cas C · vSphere</button>
+    </div>
+    <div class="tab-pane on" id="t0a">
+      <div class="cards">
+        <div class="card"><div class="card-label">CPU</div><div class="card-val">4 vCPU</div></div>
+        <div class="card"><div class="card-label">RAM</div><div class="card-val">8 Go</div></div>
+        <div class="card"><div class="card-label">Disque</div><div class="card-val">20 Go</div></div>
+        <div class="card"><div class="card-label">OS recommandé</div><div class="card-val">Ubuntu 22.04</div><div class="card-sub">ou Debian 12 · WSL2</div></div>
+      </div>
+      <div class="info">Réseau : mode bridge de l'hyperviseur (ou WSL2 miroir) pour rendre le cluster accessible depuis votre LAN.</div>
+    </div>
+    <div class="tab-pane" id="t0b">
+      <div class="cards">
+        <div class="card"><div class="card-label">Nœuds minimum</div><div class="card-val">2 machines</div><div class="card-sub">1 control-plane · 1 worker</div></div>
+        <div class="card"><div class="card-label">Par nœud</div><div class="card-val">2 CPU · 4 Go</div><div class="card-sub">20 Go disque OS</div></div>
+        <div class="card"><div class="card-label">Réseau</div><div class="card-val">Bridge switch commun</div></div>
+        <div class="card"><div class="card-label">Stockage</div><div class="card-val">Disque séparé</div><div class="card-sub">optionnel mais recommandé</div></div>
+      </div>
+    </div>
+    <div class="tab-pane" id="t0c">
+      <div class="cards">
+        <div class="card"><div class="card-label">Datastore</div><div class="card-val">vSAN ou VMFS</div></div>
+        <div class="card"><div class="card-label">Réseau VM</div><div class="card-val">Port group bridge</div><div class="card-sub">IP routables, pas NAT</div></div>
+        <div class="card"><div class="card-label">Template VM</div><div class="card-val">Ubuntu 22.04</div><div class="card-sub">2 vCPU · 4 Go · 20 Go</div></div>
+      </div>
+      <div class="info">Stockage : CSI vSphere pour PVC sur vSAN, ou disque virtuel séparé pour volumes hostPath.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Vérification OS</div>
+      <div class="code">cat /etc/os-release</div>
+      <div class="ok"><i class="ti ti-check"></i> Résultat attendu : <code>VERSION_ID="22.04"</code></div>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="step" id="s1">
+    <div class="step-meta">
+      <div class="step-num">Étape 2 / 6</div>
+      <div class="step-title">Installer Kubernetes</div>
+      <div class="step-goal">Deux voies : Minikube pour test local, kubeadm pour multi-nœuds.</div>
+    </div>
+    <div class="tabs">
+      <button class="tab on" onclick="tab(this,'t1a')">Minikube (local)</button>
+      <button class="tab" onclick="tab(this,'t1b')">kubeadm (multi-nœuds)</button>
+    </div>
+    <div class="tab-pane on" id="t1a">
+      <div class="section">
+        <div class="section-title">Télécharger Minikube + kubectl</div>
+        <div class="code">curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+curl -LO "https://dl.k8s.io/release/$(curl -L -s \
+  https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Démarrer le cluster</div>
+        <div class="code">minikube start --cpus=4 --memory=8192 --driver=docker</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Vérification</div>
+        <div class="code">kubectl get nodes        # doit afficher minikube   Ready
+kubectl get pods -A     # tous les pods système doivent être Running</div>
+      </div>
+    </div>
+    <div class="tab-pane" id="t1b">
+      <div class="section">
+        <div class="section-title">Prérequis — désactiver le swap</div>
+        <div class="code">sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab</div>
+        <div class="warn"><i class="ti ti-alert-triangle"></i> Le swap non désactivé fait échouer kubelet silencieusement. Vérifiez : <code>free -h</code> — la ligne Swap doit afficher 0.</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Installer containerd + kubeadm</div>
+        <div class="code">sudo apt update && sudo apt install -y containerd
+sudo mkdir -p /etc/containerd
+containerd config default | sudo tee /etc/containerd/config.toml
+sudo systemctl restart containerd
+sudo apt install -y kubeadm=1.28.1-00 kubelet=1.28.1-00 kubectl=1.28.1-00
+sudo apt-mark hold kubeadm kubelet kubectl</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Initialiser le control-plane</div>
+        <div class="code">sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml</div>
+      </div>
+      <div class="section">
+        <div class="section-title">Vérification</div>
+        <div class="code">kubectl get nodes   # tous les nœuds doivent être Ready</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="step" id="s2">
+    <div class="step-meta">
+      <div class="step-num">Étape 3 / 6</div>
+      <div class="step-title">Configurer le réseau et CoreDNS</div>
+      <div class="step-goal">CoreDNS résout les noms de services à l'intérieur du cluster. Sans lui, les pods ne se trouvent pas.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Activer l'addon Ingress (Minikube)</div>
+      <div class="code">minikube addons enable ingress</div>
+      <div class="info">Sur bare metal / vSphere, installez le contrôleur Ingress NGINX via manifest officiel — non inclus par défaut.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Vérifier CoreDNS</div>
+      <div class="code">kubectl -n kube-system get pods | grep coredns
+kubectl -n kube-system describe deployment coredns | grep -A5 Resources</div>
+      <div class="ok"><i class="ti ti-check"></i> Deux pods CoreDNS doivent être en état Running.</div>
+      <div class="warn"><i class="ti ti-alert-triangle"></i> Sans resource limits sur CoreDNS, un pic de requêtes DNS peut saturer un nœud entier. Vérifiez que <code>limits.memory</code> est défini.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Modifier CoreDNS si besoin</div>
+      <div class="code">kubectl -n kube-system edit deployment coredns</div>
+    </div>
+  </div>
+
+  <!-- STEP 4 -->
+  <div class="step" id="s3">
+    <div class="step-meta">
+      <div class="step-num">Étape 4 / 6</div>
+      <div class="step-title">Stockage persistant et MariaDB</div>
+      <div class="step-goal">Un pod détruit sans PersistentVolume perd toutes ses données. Cette étape garantit la persistance pour MariaDB.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">PersistentVolume + PersistentVolumeClaim</div>
+      <div class="code-label">path_volume.yaml</div>
+      <div class="code">apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mariadb-pv
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /data/mariadb
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-pvc
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi</div>
+      <div class="info"><code>hostPath</code> est réservé au test local. En production, utilisez un CSI driver ou NFS — le volume doit suivre le pod sur n'importe quel nœud.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Créer le secret MariaDB</div>
+      <div class="code">kubectl create secret generic mariadb-secret \
+  --from-literal=root-password='MotDePasseFort'</div>
+      <div class="warn"><i class="ti ti-alert-triangle"></i> Les secrets K8s sont encodés base64, pas chiffrés. En production, utilisez Vault ou Sealed Secrets — jamais de mot de passe en clair dans un ConfigMap.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Déployer MariaDB en StatefulSet</div>
+      <div class="code-label">Mariadb-statefulset.yaml — resource limits</div>
+      <div class="code">resources:
+  requests:
+    memory: "256Mi"
+    cpu: "200m"
+  limits:
+    memory: "512Mi"
+    cpu: "500m"</div>
+      <div class="ok"><i class="ti ti-check"></i> Utilisez un StatefulSet (pas un Deployment) pour toute base de données — il garantit l'identité stable du pod et l'attachement du volume.</div>
+    </div>
+  </div>
+
+  <!-- STEP 5 -->
+  <div class="step" id="s4">
+    <div class="step-meta">
+      <div class="step-num">Étape 5 / 6</div>
+      <div class="step-title">Application web et Ingress</div>
+      <div class="step-goal">Déployer nginx en 2 réplicas, créer le Service, configurer l'Ingress pour router le trafic HTTP entrant.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Deployment + Service</div>
+      <div class="code-label">application_web_via_ingres.yaml</div>
+      <div class="code">apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: web
+  template:
+    metadata:
+      labels:
+        app: web
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:alpine
+        ports:
+        - containerPort: 80
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-svc
+spec:
+  selector:
+    app: web
+  ports:
+  - port: 80
+    targetPort: 80</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Règle Ingress</div>
+      <div class="code-label">ingress.yaml</div>
+      <div class="code">apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: web-ingress
+spec:
+  rules:
+  - host: monapp.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: web-svc
+            port:
+              number: 80</div>
+      <div class="warn"><i class="ti ti-alert-triangle"></i> Pas de TLS ici. En production, ajoutez <code>tls:</code> dans la spec Ingress + cert-manager. Un Ingress HTTP sans TLS expose tout le trafic en clair.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Cycle de vie des pods — réflexes</div>
+      <div class="code">kubectl get pods -w                          # surveiller en temps réel
+kubectl describe pod &lt;nom&gt;                   # CrashLoopBackOff → lire Events
+kubectl logs &lt;pod&gt;                           # lire les erreurs applicatives
+kubectl get ingress                          # vérifier que l'ADDRESS est assignée</div>
+    </div>
+  </div>
+
+  <!-- STEP 6 -->
+  <div class="step" id="s5">
+    <div class="step-meta">
+      <div class="step-num">Étape 6 / 6</div>
+      <div class="step-title">Snapshot pré-maintenance et shutdown propre</div>
+      <div class="step-goal">Avant toute intervention, capturer l'état du cluster et des données. Séquence obligatoire.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Séquence — ordre obligatoire</div>
+      <div class="flow">
+        <div class="flow-item"><div class="flow-left"><div class="flow-circle">1</div><div class="flow-line"></div></div><div class="flow-body"><div class="flow-title">Snapshot pré-shutdown</div><div class="flow-desc">Capture l'état complet. Si quelque chose tourne mal, vous pouvez restaurer.</div></div></div>
+        <div class="flow-item"><div class="flow-left"><div class="flow-circle">2</div><div class="flow-line"></div></div><div class="flow-body"><div class="flow-title">Cordon du nœud</div><div class="flow-desc"><code>kubectl cordon &lt;node&gt;</code> — interdit tout nouveau pod. Les pods existants continuent.</div></div></div>
+        <div class="flow-item"><div class="flow-left"><div class="flow-circle">3</div><div class="flow-line"></div></div><div class="flow-body"><div class="flow-title">Drain du nœud</div><div class="flow-desc"><code>kubectl drain &lt;node&gt; --ignore-daemonsets --delete-emptydir-data</code></div></div></div>
+        <div class="flow-item"><div class="flow-left"><div class="flow-circle">4</div><div class="flow-line"></div></div><div class="flow-body"><div class="flow-title">Arrêt kubelet</div><div class="flow-desc"><code>sudo systemctl stop kubelet</code></div></div></div>
+        <div class="flow-item"><div class="flow-left"><div class="flow-circle">5</div></div><div class="flow-body"><div class="flow-title">Extinction machine</div><div class="flow-desc"><code>sudo shutdown -h now</code> ou snapshot VMware si VM.</div></div></div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Script snapshot</div>
+      <div class="code-label">pre_shutdown_snapshot.sh</div>
+      <div class="code">#!/bin/bash
+SNAPSHOT_DIR="snapshot_$(date +%Y%m%d_%H%M%S)"
+mkdir -p "$SNAPSHOT_DIR"
+
+kubectl get nodes -o wide                        > "$SNAPSHOT_DIR/nodes.txt"
+kubectl get all -A -o wide                       > "$SNAPSHOT_DIR/all_resources.txt"
+kubectl get pv,pvc -A                            > "$SNAPSHOT_DIR/storage.txt"
+kubectl get ingress -A -o wide                   > "$SNAPSHOT_DIR/ingress.txt"
+kubectl get events -A --sort-by='.lastTimestamp' > "$SNAPSHOT_DIR/events.txt"
+kubectl get deploy,sts,svc,cm,secret -A -o yaml  > "$SNAPSHOT_DIR/manifests.yaml"
+
+MARIADB_PWD=$(kubectl get secret mariadb-secret \
+  -o jsonpath='{.data.root-password}' | base64 -d)
+kubectl exec -n monprojet mariadb-0 -- \
+  mysqldump --all-databases -p"$MARIADB_PWD" > "$SNAPSHOT_DIR/mariadb_dump.sql"
+
+echo "Snapshot sauvegardé dans : $SNAPSHOT_DIR"</div>
+      <div class="warn"><i class="ti ti-alert-triangle"></i> Le dump SQL ne remplace pas le snapshot PV. Faites toujours les deux. Le dossier snapshot doit être copié hors cluster après exécution.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Script shutdown complet</div>
+      <div class="code-label">execute_shutdown.sh</div>
+      <div class="code">#!/bin/bash
+NODE=${1:-$(kubectl get nodes -o jsonpath='{.items[0].metadata.name}')}
+echo "=== [1/4] Snapshot ===" && ./pre_shutdown_snapshot.sh
+echo "=== [2/4] Cordon ===" && kubectl cordon "$NODE"
+echo "=== [3/4] Drain ===" && kubectl drain "$NODE" \
+  --ignore-daemonsets --delete-emptydir-data --timeout=120s
+echo "=== [4/4] Arrêt ===" && sudo systemctl stop kubelet && sudo shutdown -h now</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Reprendre après maintenance</div>
+      <div class="code">sudo systemctl start kubelet
+kubectl uncordon &lt;node&gt;
+kubectl get nodes   # doit repasser Ready</div>
+      <div class="ok"><i class="ti ti-check"></i> Sur Minikube : <code>minikube stop</code> et <code>minikube start</code> remplacent les étapes kubelet + uncordon.</div>
+    </div>
+    <div class="warn"><i class="ti ti-alert-triangle"></i> Sans PodDisruptionBudget, <code>kubectl drain</code> peut provoquer une interruption de service silencieuse. Définissez un PDB avant toute maintenance en production.</div>
+  </div>
+
+  <!-- STEP 7 — Référence -->
+  <div class="step" id="s6">
+    <div class="step-meta">
+      <div class="step-num">Référence</div>
+      <div class="step-title">Vocabulaire et commandes essentielles</div>
+      <div class="step-goal">Kubernetes ne fait rien de magique. Il suit des fichiers YAML déclaratifs. Si tu perds le fil, c'est que tu as trop de couches empilées sans besoin réel.</div>
+    </div>
+    <div class="section">
+      <div class="section-title">Concepts</div>
+      <table>
+        <tr><th>Concept</th><th>Rôle</th></tr>
+        <tr><td>Pod</td><td>Plus petite unité : 1 ou plusieurs conteneurs</td></tr>
+        <tr><td>Node</td><td>Machine physique ou virtuelle qui exécute les pods</td></tr>
+        <tr><td>Deployment</td><td>Gère le cycle de vie des pods (copies, mise à jour, redémarrage)</td></tr>
+        <tr><td>Service</td><td>Point d'entrée stable pour joindre un groupe de pods</td></tr>
+        <tr><td>Ingress</td><td>Routeur externe HTTP/HTTPS vers les services</td></tr>
+        <tr><td>ConfigMap / Secret</td><td>Paramètres (non-sensibles) ou mots de passe / tokens</td></tr>
+        <tr><td>PersistentVolume / PVC</td><td>Stockage durable pour bases de données</td></tr>
+        <tr><td>StatefulSet</td><td>Comme Deployment, mais pour les applis avec état (BDD)</td></tr>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-title">Commandes de base</div>
+      <table>
+        <tr><th>Commande</th><th>Utilité</th></tr>
+        <tr><td>kubectl get all</td><td>Voir pods, services, deployments dans le namespace actuel</td></tr>
+        <tr><td>kubectl describe pod &lt;nom&gt;</td><td>Détails de l'état, événements, erreurs</td></tr>
+        <tr><td>kubectl logs &lt;pod&gt;</td><td>Logs du conteneur principal</td></tr>
+        <tr><td>kubectl exec -it &lt;pod&gt; -- /bin/sh</td><td>Entrer dans un conteneur pour déboguer</td></tr>
+        <tr><td>kubectl apply -f fichier.yaml</td><td>Créer ou modifier une ressource</td></tr>
+        <tr><td>kubectl delete -f fichier.yaml</td><td>Supprimer proprement</td></tr>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-title">Cycle de vie d'un pod</div>
+      <table>
+        <tr><th>État</th><th>Signification</th><th>Réflexe</th></tr>
+        <tr><td>Pending</td><td>En attente de scheduling</td><td>kubectl describe pod → Events</td></tr>
+        <tr><td>CrashLoopBackOff</td><td>Démarre et plante en boucle</td><td>kubectl logs &lt;pod&gt;</td></tr>
+        <tr><td>OOMKilled</td><td>Tué par manque de RAM</td><td>Augmenter limits.memory</td></tr>
+        <tr><td>ImagePullBackOff</td><td>Image introuvable</td><td>Vérifier nom image et registry</td></tr>
+        <tr><td>Running</td><td>Opérationnel</td><td>—</td></tr>
+      </table>
+    </div>
+    <div class="section">
+      <div class="section-title">Ce que l'IA omet — récapitulatif</div>
+      <table>
+        <tr><th>Sujet</th><th>Omission fréquente</th></tr>
+        <tr><td>kubeadm</td><td>Swap non désactivé → kubelet échoue silencieusement</td></tr>
+        <tr><td>Secrets</td><td>Encodés base64, pas chiffrés — utiliser Vault en production</td></tr>
+        <tr><td>Ingress</td><td>TLS absent par défaut — ajouter cert-manager</td></tr>
+        <tr><td>CoreDNS</td><td>Pas de resource limits → saturation nœud possible</td></tr>
+        <tr><td>PV hostPath</td><td>Ne suit pas le pod sur un autre nœud</td></tr>
+        <tr><td>drain</td><td>Sans PodDisruptionBudget → interruption silencieuse</td></tr>
+        <tr><td>Dump SQL</td><td>Ne remplace pas le snapshot PV — toujours faire les deux</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <!-- Footer nav -->
+  <div class="nav-footer">
+    <button id="btn-prev" onclick="move(-1)" disabled>← Précédent</button>
+    <button id="btn-next" onclick="move(1)">Suivant →</button>
+  </div>
+
+</div>
+<script>
+var cur = 0, total = 7;
+function goto(n) {
+  document.getElementById('s'+cur).classList.remove('visible');
+  document.querySelectorAll('.step-nav button')[cur].classList.remove('active');
+  cur = n;
+  document.getElementById('s'+cur).classList.add('visible');
+  document.querySelectorAll('.step-nav button')[cur].classList.add('active');
+  document.getElementById('prog').style.width = Math.round((cur+1)/total*100)+'%';
+  document.getElementById('btn-prev').disabled = cur === 0;
+  document.getElementById('btn-next').disabled = cur === total-1;
+  window.scrollTo(0, 0);
+}
+function move(d) { if(cur+d>=0 && cur+d<total) goto(cur+d); }
+function tab(el, id) {
+  var p = el.parentElement;
+  p.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('on'); });
+  el.classList.add('on');
+  var s = p.parentElement;
+  s.querySelectorAll('.tab-pane').forEach(function(c){ c.classList.remove('on'); });
+  document.getElementById(id).classList.add('on');
+}
+</script>
+</body>
+</html>
