@@ -1,0 +1,1 @@
+kubectl -n kube-system edit deployment coredns

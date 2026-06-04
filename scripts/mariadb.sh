@@ -1,0 +1,1 @@
+kubectl create secret generic mariadb-secret --from-literal=root-password='ChoisissezUnMotDePasseFort'

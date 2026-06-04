@@ -1,0 +1,1 @@
+kubectl get nodes   # tous les nœuds doivent être "Ready"
