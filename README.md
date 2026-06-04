@@ -5,6 +5,7 @@ De zéro · bare metal, VMware ou machine locale
 
 > Ce runbook n'est pas un tutoriel de plus. C'est une séquence opérationnelle : chaque étape est une action, chaque vérification est concrète, chaque avertissement signale ce que l'IA génère sans vous dire.
 
+[→ Ouvrir le runbook interactif](https://moez-fintech.github.io/K8s/runbook-K8s.html)
 ---
 
 ## Public cible
